@@ -118,7 +118,8 @@ services:
     labels:
       - "traefik.http.middlewares.backend-prefix.stripprefix.prefixes=/api"
       - "traefik.http.middlewares.backend-headers.headers.customrequestheaders.CF-Connecting-IP="
-      - "traefik.http.routers.backend.middlewares=backend-prefix,backend-headers"
+      - "traefik.http.middlewares.backend-compress.compress=true"
+      - "traefik.http.routers.backend.middlewares=backend-prefix,backend-headers,backend-compress"
       - "traefik.http.routers.backend.rule=PathPrefix(`/api`)"
       - "traefik.http.routers.backend.priority=100"
       - "traefik.http.routers.backend.entrypoints=web"
