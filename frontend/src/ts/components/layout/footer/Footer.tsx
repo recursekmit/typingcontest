@@ -41,7 +41,7 @@ export function Footer(): JSXElement {
               icon: "fa-envelope",
               fixedWidth: true,
             }}
-            href="mailto:recurse@kmit.in"
+            href="mailto:recursekmit@gmail.com"
           />
           <Button
             variant="text"

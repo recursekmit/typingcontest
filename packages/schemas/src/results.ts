@@ -80,7 +80,7 @@ const ResultBaseSchema = z.object({
   consistency: PercentageSchema,
   keyConsistency: PercentageSchema,
   chartData: ChartDataSchema.or(z.literal("toolong")),
-  uid: IdSchema,
+  uid: z.string(), //set by the server from the auth token (firebase or roll-... ids)
 
   //required on POST but optional in the database and might be removed to save space
   restartCount: z.number().int().nonnegative().optional(),

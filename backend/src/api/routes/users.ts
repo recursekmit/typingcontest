@@ -11,6 +11,12 @@ export default s.router(usersContract, {
   create: {
     handler: async (r) => callController(UserController.createNewUser)(r),
   },
+  rollLogin: {
+    handler: async (r) => callController(UserController.rollLogin)(r),
+  },
+  rollSignUp: {
+    handler: async (r) => callController(UserController.rollSignUp)(r),
+  },
   getNameAvailability: {
     handler: async (r) => callController(UserController.checkName)(r),
   },

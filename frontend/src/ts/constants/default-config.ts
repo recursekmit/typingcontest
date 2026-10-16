@@ -27,7 +27,7 @@ const obj: Config = {
   numbers: false,
   words: 50,
   time: 30,
-  mode: "time",
+  mode: "custom",
   quoteLength: [1],
   language: "english",
   fontSize: 2,

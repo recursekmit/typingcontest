@@ -1,91 +1,90 @@
-import {
-  FirebaseApp,
-  FirebaseError,
-  FirebaseOptions,
-  getApp,
-  getApps,
-  initializeApp,
-} from "firebase/app";
-import {
-  getAuth,
-  Auth as AuthType,
-  User,
-  setPersistence as firebaseSetPersistence,
-  browserSessionPersistence,
-  signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword,
-  signInWithPopup as firebaseSignInWithPopup,
-  createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword,
-  getIdToken as firebaseGetIdToken,
-  UserCredential,
-  AuthProvider,
-  onAuthStateChanged,
-  indexedDBLocalPersistence,
-  getAdditionalUserInfo,
-} from "firebase/auth";
+/**
+ * Authentication for Recurse Type.
+ *
+ * Firebase auth was replaced with roll number login: the backend issues a
+ * session token (see backend/src/utils/roll-auth.ts) which is stored in
+ * localStorage and sent as the Bearer token. The exported functions keep the
+ * old firebase-shaped api so the rest of the app does not need to change.
+ */
+import type { User, UserCredential, AuthProvider } from "firebase/auth";
+import type { Analytics as AnalyticsType } from "firebase/analytics";
 import { promiseWithResolvers } from "./utils/misc";
-import { isDevEnvironment } from "./utils/env";
-import { createErrorMessage } from "./utils/error";
-
-import {
-  Analytics as AnalyticsType,
-  getAnalytics as firebaseGetAnalytics,
-} from "firebase/analytics";
-import { tryCatch } from "@monkeytype/util/trycatch";
-import { googleSignUpEvent } from "./events/google-sign-up";
-import { addBanner } from "./states/banners";
 import { setUserId, setUserVerified } from "./states/core";
 
-let app: FirebaseApp | undefined;
-let Auth: AuthType | undefined;
+const SESSION_KEY = "recurseSession";
 
-/**
- * ignore auth callback. This is used during signup with google/github where we need to create the user on the backend first.
- */
-let ignoreAuthCallback: boolean = false;
+export type RollSession = {
+  token: string;
+  uid: string;
+  email: string;
+  name: string;
+  /** unix seconds */
+  expiresAt: number;
+};
 
 type ReadyCallback = (success: boolean, user: User | null) => Promise<void>;
 let readyCallback: ReadyCallback | undefined;
+let session: RollSession | null = null;
+let initialized = false;
 
 const { promise: authPromise, resolve: resolveAuthPromise } =
   promiseWithResolvers();
 
+function isExpired(s: RollSession): boolean {
+  return s.expiresAt * 1000 < Date.now();
+}
+
+function loadSession(): RollSession | null {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as RollSession;
+    if (
+      typeof parsed.token !== "string" ||
+      typeof parsed.uid !== "string" ||
+      typeof parsed.expiresAt !== "number" ||
+      isExpired(parsed)
+    ) {
+      window.localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(s: RollSession | null): void {
+  try {
+    if (s === null) {
+      window.localStorage.removeItem(SESSION_KEY);
+    } else {
+      window.localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    }
+  } catch (e) {
+    console.error("Failed to store session", e);
+  }
+}
+
+function toUser(s: RollSession): User {
+  return {
+    uid: s.uid,
+    email: s.email,
+    displayName: s.name,
+    emailVerified: true,
+    isAnonymous: false,
+    providerData: [],
+  } as unknown as User;
+}
+
 export async function init(callback: ReadyCallback): Promise<void> {
   try {
-    let firebaseConfig: FirebaseOptions | null;
-
-    firebaseConfig = (
-      (await import("./constants/firebase-config")) as {
-        firebaseConfig: FirebaseOptions;
-      }
-    ).firebaseConfig;
-
     readyCallback = callback;
-    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    Auth = getAuth(app);
-
-    const rememberMe =
-      window.localStorage.getItem("firebasePersistence") === "LOCAL";
-    await setPersistence(rememberMe, false);
-
-    onAuthStateChanged(Auth, async (user) => {
-      if (!ignoreAuthCallback) {
-        setUserState(user);
-        await callback(true, user);
-      }
-    });
-  } catch (e) {
-    app = undefined;
-    Auth = undefined;
-    console.error("Firebase failed to initialize", e);
-    await callback(false, null);
-    setUserState(null);
-    if (isDevEnvironment()) {
-      addBanner({
-        level: "notice",
-        text: "Dev Info: Firebase failed to initialize",
-        icon: "fas fa-exclamation-triangle",
-      });
-    }
+    initialized = true;
+    session = loadSession();
+    const user = session === null ? null : toUser(session);
+    setUserState(user);
+    await callback(true, user);
   } finally {
     resolveAuthPromise();
   }
@@ -96,42 +95,51 @@ export async function init(callback: ReadyCallback): Promise<void> {
  * @returns the current user if authenticated, else `null`
  */
 export function getAuthenticatedUser(): User | null {
-  return Auth?.currentUser ?? null;
+  if (session === null) return null;
+  if (isExpired(session)) {
+    void signOut();
+    return null;
+  }
+  return toUser(session);
+}
+
+export function getRollSession(): RollSession | null {
+  return session;
 }
 
 export function getAnalytics(): AnalyticsType {
-  return firebaseGetAnalytics(app);
+  throw new Error("Analytics unavailable");
 }
 
 export function isAuthAvailable(): boolean {
-  return Auth !== undefined;
+  return initialized;
+}
+
+/**
+ * stores a session returned by the roll login endpoint and signs the user in
+ */
+export async function startRollSession(newSession: RollSession): Promise<void> {
+  session = newSession;
+  saveSession(newSession);
+  const user = toUser(newSession);
+  setUserState(user);
+  await readyCallback?.(true, user);
 }
 
 export async function signOut(): Promise<void> {
   console.log("auth signout");
-  await Auth?.signOut();
+  session = null;
+  saveSession(null);
+  setUserState(null);
+  await readyCallback?.(true, null);
 }
 
 export async function signInWithEmailAndPassword(
-  email: string,
-  password: string,
-  rememberMe: boolean,
+  _email: string,
+  _password: string,
+  _rememberMe: boolean,
 ): Promise<UserCredential> {
-  if (Auth === undefined) throw new Error("Authentication uninitialized");
-  await setPersistence(rememberMe, true);
-
-  const { data: result, error } = await tryCatch(
-    firebaseSignInWithEmailAndPassword(Auth, email, password),
-  );
-  if (error !== null) {
-    console.error(error);
-    throw translateFirebaseError(
-      error,
-      "Failed to sign in with email and password",
-    );
-  }
-
-  return result;
+  throw new Error("Please sign in with your roll number");
 }
 
 export function setUserState(
@@ -150,107 +158,26 @@ export function setUserState(
 }
 
 export async function signInWithPopup(
-  provider: AuthProvider,
-  rememberMe: boolean,
+  _provider: AuthProvider,
+  _rememberMe: boolean,
 ): Promise<void> {
-  if (Auth === undefined) throw new Error("Authentication uninitialized");
-  await setPersistence(rememberMe, true);
-  ignoreAuthCallback = true;
-
-  const { data: signedInUser, error } = await tryCatch(
-    firebaseSignInWithPopup(Auth, provider),
-  );
-  if (error !== null) {
-    ignoreAuthCallback = false;
-    console.log(error);
-    throw translateFirebaseError(error, "Failed to sign in with popup");
-  }
-  const additionalUserInfo = getAdditionalUserInfo(signedInUser);
-  if (additionalUserInfo?.isNewUser) {
-    googleSignUpEvent.dispatch({ signedInUser, isNewUser: true });
-  } else {
-    setUserState(signedInUser.user);
-    ignoreAuthCallback = false;
-    await readyCallback?.(true, signedInUser.user);
-  }
+  throw new Error("Please sign in with your roll number");
 }
 
 export async function createUserWithEmailAndPassword(
-  email: string,
-  password: string,
+  _email: string,
+  _password: string,
 ): Promise<UserCredential> {
-  if (Auth === undefined) throw new Error("Authentication uninitialized");
-  ignoreAuthCallback = true;
-  const result = await firebaseCreateUserWithEmailAndPassword(
-    Auth,
-    email,
-    password,
-  );
-
-  return result;
+  throw new Error("Please sign in with your roll number");
 }
 
 export async function getIdToken(): Promise<string | null> {
-  const user = getAuthenticatedUser();
-  if (user === null) return null;
-  return firebaseGetIdToken(user);
-}
-async function setPersistence(
-  rememberMe: boolean,
-  store = false,
-): Promise<void> {
-  if (Auth === undefined) throw new Error("Authentication uninitialized");
-  const persistence = rememberMe
-    ? indexedDBLocalPersistence
-    : browserSessionPersistence;
-
-  if (store) {
-    window.localStorage.setItem(
-      "firebasePersistence",
-      rememberMe ? "LOCAL" : "SESSION",
-    );
-  }
-
-  await firebaseSetPersistence(Auth, persistence);
-}
-
-function translateFirebaseError(
-  error: Error | FirebaseError,
-  defaultMessage: string,
-): Error {
-  let message = createErrorMessage(error, defaultMessage);
-
-  if (error instanceof FirebaseError) {
-    if (error.code === "auth/wrong-password") {
-      message = "Incorrect password";
-    } else if (error.code === "auth/user-not-found") {
-      message = "User not found";
-    } else if (error.code === "auth/invalid-email") {
-      message =
-        "Invalid email format (make sure you are using your email to login - not your username)";
-    } else if (error.code === "auth/invalid-credential") {
-      message =
-        "Email/password is incorrect or your account does not have password authentication enabled.";
-    } else if (error.code === "auth/popup-closed-by-user") {
-      message = "Popup closed by user";
-    } else if (error.code === "auth/popup-blocked") {
-      message =
-        "Sign in popup was blocked by the browser. Check the address bar for a blocked popup icon, or update your browser settings to allow popups.";
-    } else if (error.code === "auth/user-cancelled") {
-      message = "Cancelled by user";
-    } else if (error.code === "auth/account-exists-with-different-credential") {
-      message =
-        "Account already exists, but its using a different authentication method. Try signing in with a different method";
-    } else {
-      message = `Firebase error: ${error.code}`;
-    }
-  }
-
-  return new Error(message, { cause: error });
+  if (getAuthenticatedUser() === null) return null;
+  return session?.token ?? null;
 }
 
 export function resetIgnoreAuthCallback(): void {
-  ignoreAuthCallback = false;
+  //
 }
 
 export { authPromise };

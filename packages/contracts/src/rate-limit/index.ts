@@ -186,6 +186,23 @@ export const limits = {
     max: 2,
   },
 
+  // 1v1 races, polled ~2x per second while in a room
+  raceGet: {
+    window: "minute",
+    max: 300,
+  },
+
+  raceCreate: {
+    window: "hour",
+    max: 300,
+  },
+
+  // generous: a whole lab can share one ip
+  userRollLogin: {
+    window: "hour",
+    max: 300,
+  },
+
   userDelete: {
     window: "day",
     max: 3,

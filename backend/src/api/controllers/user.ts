@@ -29,6 +29,8 @@ import * as ReportDAL from "../../dal/report";
 import emailQueue from "../../queues/email-queue";
 import FirebaseAdmin from "../../init/firebase-admin";
 import * as AuthUtil from "../../utils/auth";
+import * as RollAuth from "../../utils/roll-auth";
+import * as RollCredentialsDAL from "../../dal/roll-credentials";
 import * as Dates from "date-fns";
 import { UTCDateMini } from "@date-fns/utc";
 import * as BlocklistDal from "../../dal/blocklist";
@@ -40,6 +42,7 @@ import {
   CountByYearAndDay,
   TestActivity,
   UserProfileDetails,
+  UserNameSchema,
 } from "@monkeytype/schemas/users";
 import { addImportantLog, addLog } from "../../dal/logs";
 import { sendForgotPasswordEmail as authSendForgotPasswordEmail } from "../../utils/auth";
@@ -54,6 +57,9 @@ import {
   CheckNamePathParameters,
   CheckNameResponse,
   CreateUserRequest,
+  RollLoginRequest,
+  RollSignUpRequest,
+  RollLoginResponse,
   DeleteCustomThemeRequest,
   EditCustomThemeRequst,
   EditTagRequest,
@@ -140,6 +146,136 @@ export async function createNewUser(
     await firebaseDeleteUserIgnoreError(uid);
     throw e;
   }
+}
+
+const WRONG_LOGIN = "Wrong roll number or password";
+
+function rollSession(
+  uid: string,
+  email: string,
+  name: string,
+  isNewUser: boolean,
+): RollLoginResponse {
+  const { token, expiresAt } = RollAuth.createToken({ uid, email, name });
+  return new MonkeyResponse(isNewUser ? "User created" : "Signed in", {
+    token,
+    uid,
+    email,
+    name,
+    expiresAt,
+    isNewUser,
+  });
+}
+
+export async function rollLogin(
+  req: MonkeyRequest<undefined, RollLoginRequest>,
+): Promise<RollLoginResponse> {
+  const rollNumber = req.body.rollNumber.toUpperCase();
+  const uid = `roll-${rollNumber}`;
+
+  const { data: existing } = await tryCatch(
+    UserDAL.getPartialUser(uid, "roll login", ["name", "email", "banned"]),
+  );
+  if (existing === null) {
+    throw new MonkeyError(
+      404,
+      "No account for this roll number - sign up first",
+    );
+  }
+  if (existing.banned === true) {
+    throw new MonkeyError(403, "This roll number has been banned");
+  }
+  if (!(await RollCredentialsDAL.hasPassword(uid))) {
+    // account made before passwords existed
+    throw new MonkeyError(
+      409,
+      "This account has no password yet - use sign up to set your email and password",
+    );
+  }
+  if (!(await RollCredentialsDAL.verifyPassword(uid, req.body.password))) {
+    throw new MonkeyError(401, WRONG_LOGIN);
+  }
+
+  return rollSession(uid, existing.email, existing.name, false);
+}
+
+export async function rollSignUp(
+  req: MonkeyRequest<undefined, RollSignUpRequest>,
+): Promise<RollLoginResponse> {
+  const rollNumber = req.body.rollNumber.toUpperCase();
+  const uid = `roll-${rollNumber}`;
+  const email = req.body.email.trim().toLowerCase();
+  const { password } = req.body;
+
+  const { data: existing } = await tryCatch(
+    UserDAL.getPartialUser(uid, "roll sign up", ["name", "banned"]),
+  );
+
+  if (existing !== null) {
+    if (existing.banned === true) {
+      throw new MonkeyError(403, "This roll number has been banned");
+    }
+    if (await RollCredentialsDAL.hasPassword(uid)) {
+      throw new MonkeyError(
+        409,
+        "This roll number is already registered - sign in instead",
+      );
+    }
+    // account made before passwords existed: keep its name, set email + password
+    await UserDAL.updateEmail(uid, email);
+    await RollCredentialsDAL.setPassword(uid, password);
+    void addImportantLog(
+      "user_password_set",
+      `${existing.name} ${rollNumber}`,
+      uid,
+    );
+    return rollSession(uid, email, existing.name, false);
+  }
+
+  const name = await getAvailableRollUserName(req.body.name, rollNumber, uid);
+
+  const blocklisted = await BlocklistDal.contains({ name, email });
+  if (blocklisted) {
+    throw new MonkeyError(409, "Roll number, name or email blocked");
+  }
+
+  await UserDAL.addUser(name, email, uid);
+  await RollCredentialsDAL.setPassword(uid, password);
+  void addImportantLog("user_created", `${name} ${rollNumber}`, uid);
+
+  return rollSession(uid, email, name, true);
+}
+
+/**
+ * converts a real name into a valid, unique username (max 16 chars).
+ * "Sai Aditya" -> "Sai_Aditya", on collision "Sai_Aditya_0501", last resort the roll number.
+ */
+async function getAvailableRollUserName(
+  realName: string,
+  rollNumber: string,
+  uid: string,
+): Promise<string> {
+  const base = realName
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^0-9a-zA-Z_.-]/g, "")
+    .slice(0, 16);
+
+  if (!UserNameSchema.safeParse(base).success) {
+    throw new MonkeyError(400, "This name is not allowed");
+  }
+
+  const candidates = [
+    base,
+    `${base.slice(0, 11)}_${rollNumber.slice(-4)}`,
+    rollNumber,
+  ];
+
+  for (const candidate of candidates) {
+    if (await UserDAL.isNameAvailable(candidate, uid)) return candidate;
+  }
+
+  throw new MonkeyError(409, "Could not find an available username");
 }
 
 export async function sendVerificationEmail(

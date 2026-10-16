@@ -7,7 +7,6 @@ import {
   RateLimitRequestHandler,
   type Options,
 } from "express-rate-limit";
-import { isDevEnvironment } from "../utils/misc";
 import { TsRestRequestHandler } from "@ts-rest/express";
 import {
   limits,
@@ -23,7 +22,9 @@ import {
 } from "../api/types";
 import { AppRoute, AppRouter } from "@ts-rest/core";
 
-export const REQUEST_MULTIPLIER = isDevEnvironment() ? 100 : 1;
+// 100x in production too: competitions run whole college labs behind one public ip
+// (root limit 30000 * 100 = 3M requests per hour per ip)
+export const REQUEST_MULTIPLIER = 100;
 
 export const customHandler = (
   req: ExpressRequestWithContext,
@@ -140,7 +141,7 @@ export function rateLimitRequest<
 // Root Rate Limit
 export const rootRateLimiter = rateLimit({
   windowMs: 60 * 1000 * 60,
-  limit: 1000 * REQUEST_MULTIPLIER,
+  limit: 30000 * REQUEST_MULTIPLIER,
   keyGenerator: getKey,
   handler: (_req, _res, _next, _options): void => {
     throw new MonkeyError(

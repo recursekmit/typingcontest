@@ -1,55 +1,30 @@
 import FirebaseAdmin from "./../init/firebase-admin";
-import { LRUCache } from "lru-cache";
-import {
-  recordTokenCacheAccess,
-  setTokenCacheLength,
-  setTokenCacheSize,
-} from "./prometheus";
+import { verifyToken } from "./roll-auth";
 import { type DecodedIdToken, UserRecord } from "firebase-admin/auth";
 import { getFrontendUrl } from "./misc";
 import emailQueue from "../queues/email-queue";
 import * as UserDAL from "../dal/user";
 import { isFirebaseError } from "./error";
 
-const tokenCache = new LRUCache<string, DecodedIdToken>({
-  max: 20000,
-  maxSize: 50000000, // 50MB
-  sizeCalculation: (token, key): number =>
-    JSON.stringify(token).length + key.length, //sizeInBytes
-});
-
-const TOKEN_CACHE_BUFFER = 1000 * 60 * 5; // 5 minutes
-
+/**
+ * verifies a roll number session token (see roll-auth.ts).
+ * firebase id tokens are no longer accepted.
+ */
 export async function verifyIdToken(
   idToken: string,
-  noCache = false,
+  _noCache = false,
 ): Promise<DecodedIdToken> {
-  if (noCache) {
-    return await FirebaseAdmin().auth().verifyIdToken(idToken, true);
-  }
-
-  setTokenCacheLength(tokenCache.size);
-  setTokenCacheSize(tokenCache.calculatedSize ?? 0);
-
-  const cached = tokenCache.get(idToken);
-
-  if (cached) {
-    const expirationDate = cached.exp * 1000 - TOKEN_CACHE_BUFFER;
-
-    if (expirationDate < Date.now()) {
-      recordTokenCacheAccess("hit_expired");
-      tokenCache.delete(idToken);
-    } else {
-      recordTokenCacheAccess("hit");
-      return cached;
-    }
-  } else {
-    recordTokenCacheAccess("miss");
-  }
-
-  const decoded = await FirebaseAdmin().auth().verifyIdToken(idToken, true);
-  tokenCache.set(idToken, decoded);
-  return decoded;
+  const payload = verifyToken(idToken);
+  return {
+    uid: payload.uid,
+    sub: payload.uid,
+    email: payload.email,
+    email_verified: true,
+    name: payload.name,
+    iat: payload.iat,
+    exp: payload.exp,
+    auth_time: payload.iat,
+  } as unknown as DecodedIdToken;
 }
 
 export async function updateUserEmail(
@@ -73,18 +48,14 @@ export async function updateUserPassword(
   });
 }
 
-export async function deleteUser(uid: string): Promise<void> {
-  await revokeTokensByUid(uid);
-  await FirebaseAdmin().auth().deleteUser(uid);
+// roll number users only exist in the database, there is no auth user to delete
+export async function deleteUser(_uid: string): Promise<void> {
+  //
 }
 
-export async function revokeTokensByUid(uid: string): Promise<void> {
-  await FirebaseAdmin().auth().revokeRefreshTokens(uid);
-  for (const entry of tokenCache.entries()) {
-    if (entry[1].uid === uid) {
-      tokenCache.delete(entry[0]);
-    }
-  }
+// roll number session tokens are stateless and expire on their own
+export async function revokeTokensByUid(_uid: string): Promise<void> {
+  //
 }
 
 export async function sendForgotPasswordEmail(email: string): Promise<void> {

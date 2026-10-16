@@ -27,6 +27,10 @@ import {
   UserEmailSchema,
   UserNameSchema,
   FriendSchema,
+  RollNumberSchema,
+  RollLoginNameSchema,
+  RollPasswordSchema,
+  PasswordSchema,
 } from "@monkeytype/schemas/users";
 import {
   Mode2Schema,
@@ -51,6 +55,32 @@ export const CreateUserRequestSchema = z.object({
   captcha: z.string(), //defined by google recaptcha, no validation should be applied
 });
 export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>;
+
+export const RollLoginRequestSchema = z.object({
+  rollNumber: RollNumberSchema,
+  password: PasswordSchema.max(64),
+});
+export type RollLoginRequest = z.infer<typeof RollLoginRequestSchema>;
+
+export const RollSignUpRequestSchema = z.object({
+  rollNumber: RollNumberSchema,
+  name: RollLoginNameSchema,
+  email: UserEmailSchema,
+  password: RollPasswordSchema,
+});
+export type RollSignUpRequest = z.infer<typeof RollSignUpRequestSchema>;
+
+export const RollLoginResponseSchema = responseWithData(
+  z.object({
+    token: z.string(),
+    uid: z.string(),
+    email: z.string(),
+    name: z.string(),
+    expiresAt: z.number().int(),
+    isNewUser: z.boolean(),
+  }),
+);
+export type RollLoginResponse = z.infer<typeof RollLoginResponseSchema>;
 
 export const CheckNamePathParametersSchema = z.object({
   name: UserNameSchema,
@@ -364,6 +394,36 @@ export const usersContract = c.router(
           path: "users.signUp",
           invalidMessage: "Sign up is temporarily disabled",
         },
+      }),
+    },
+    rollLogin: {
+      summary: "roll number login",
+      description:
+        "Signs in with a roll number and password. Returns a session token.",
+      method: "POST",
+      path: "/rollLogin",
+      body: RollLoginRequestSchema.strict(),
+      responses: {
+        200: RollLoginResponseSchema,
+      },
+      metadata: meta({
+        authenticationOptions: { isPublic: true },
+        rateLimit: "userRollLogin",
+      }),
+    },
+    rollSignUp: {
+      summary: "roll number sign up",
+      description:
+        "Creates a roll number account with name, email and password (or sets them on an account made before passwords existed). Returns a session token.",
+      method: "POST",
+      path: "/rollSignUp",
+      body: RollSignUpRequestSchema.strict(),
+      responses: {
+        200: RollLoginResponseSchema,
+      },
+      metadata: meta({
+        authenticationOptions: { isPublic: true },
+        rateLimit: "userRollLogin",
       }),
     },
     getNameAvailability: {

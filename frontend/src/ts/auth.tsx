@@ -34,6 +34,7 @@ import {
   resetIgnoreAuthCallback,
   signInWithEmailAndPassword,
   signInWithPopup,
+  startRollSession,
 } from "./firebase";
 import { createSignalWithSetters } from "./hooks/createSignalWithSetters";
 import { createEffectOn } from "./hooks/effects";
@@ -263,6 +264,53 @@ export async function signIn(
     return { success: false, message: error.message };
   }
   return { success: true };
+}
+
+type RollLoginResult = Awaited<ReturnType<typeof Ape.users.rollLogin>>;
+
+async function startRollSessionFromResponse(
+  response: RollLoginResult,
+): Promise<AuthResult> {
+  if (response.status !== 200) {
+    return { success: false, message: response.body.message };
+  }
+
+  const { token, uid, email, name, expiresAt, isNewUser } = response.body.data;
+  await startRollSession({ token, uid, email, name, expiresAt });
+
+  showSuccessNotification(
+    isNewUser ? `Welcome, ${name}!` : `Welcome back, ${name}!`,
+  );
+  return { success: true };
+}
+
+export async function signInWithRollNumber(
+  rollNumber: string,
+  password: string,
+): Promise<AuthResult> {
+  return startRollSessionFromResponse(
+    await Ape.users.rollLogin({
+      body: { rollNumber: rollNumber.trim().toUpperCase(), password },
+    }),
+  );
+}
+
+export async function signUpWithRollNumber(options: {
+  rollNumber: string;
+  name: string;
+  email: string;
+  password: string;
+}): Promise<AuthResult> {
+  return startRollSessionFromResponse(
+    await Ape.users.rollSignUp({
+      body: {
+        rollNumber: options.rollNumber.trim().toUpperCase(),
+        name: options.name.trim(),
+        email: options.email.trim(),
+        password: options.password,
+      },
+    }),
+  );
 }
 
 export async function signInWithProvider(

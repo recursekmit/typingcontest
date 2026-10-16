@@ -5,6 +5,12 @@ import {
   CustomTextSettings,
   CustomTextSettingsSchema,
 } from "@monkeytype/schemas/results";
+import {
+  DEFAULT_FESTIVE_TEXT_NAME,
+  festiveTexts,
+  FESTIVE_TEXTS_VERSION,
+  previousFestiveTextNames,
+} from "@monkeytype/util/festive-texts";
 
 const CustomTextObjectSchema = z.record(z.string(), z.string());
 type CustomTextObject = z.infer<typeof CustomTextObjectSchema>;
@@ -29,10 +35,15 @@ const customTextLongLS = new LocalStorageWithSchema({
 
 type CustomTextLimit = z.infer<typeof CustomTextSettingsSchema>["limit"];
 
+const OLD_DEFAULT_TEXT = "The quick brown fox jumps over the lazy dog";
+const defaultFestiveWords = (
+  festiveTexts[DEFAULT_FESTIVE_TEXT_NAME] ?? OLD_DEFAULT_TEXT
+).split(" ");
+
 const defaultCustomTextSettings: CustomTextSettings = {
-  text: ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"],
+  text: defaultFestiveWords,
   mode: "repeat",
-  limit: { value: 9, mode: "word" },
+  limit: { value: defaultFestiveWords.length, mode: "word" },
   pipeDelimiter: false,
 };
 
@@ -241,3 +252,51 @@ export function getCustomTextNames(long = false): string[] {
     return Object.keys(getLocalStorage());
   }
 }
+
+/**
+ * add the built-in festive stories to saved texts once per version (texts the
+ * user deleted stay deleted), replace the first version of the texts, and make
+ * the default story the custom text for anyone still on the stock text
+ */
+function seedFestiveTexts(): void {
+  const key = "festiveTextsSeeded";
+  try {
+    if (window.localStorage.getItem(key) === `${FESTIVE_TEXTS_VERSION}`) return;
+    const saved = getLocalStorage();
+    for (const name of previousFestiveTextNames) {
+      // oxlint-disable-next-line no-dynamic-delete
+      delete saved[name];
+    }
+    for (const [name, text] of Object.entries(festiveTexts)) {
+      saved[name] ??= text;
+    }
+    if (getText().join(" ") === OLD_DEFAULT_TEXT) {
+      setText(defaultFestiveWords);
+    }
+    if (setLocalStorage(saved)) {
+      window.localStorage.setItem(key, `${FESTIVE_TEXTS_VERSION}`);
+    }
+  } catch (e) {
+    console.error("Failed to seed festive texts", e);
+  }
+}
+
+/**
+ * show a different festive story on every visit, unless the user picked
+ * their own custom text
+ */
+function rotateFestiveText(): void {
+  try {
+    const stories = Object.values(festiveTexts);
+    const current = getText().join(" ");
+    if (!stories.includes(current)) return;
+    const others = stories.filter((story) => story !== current);
+    const next = others[Math.floor(Math.random() * others.length)];
+    if (next !== undefined) setText(next.split(" "));
+  } catch (e) {
+    console.error("Failed to rotate festive text", e);
+  }
+}
+
+seedFestiveTexts();
+rotateFestiveText();

@@ -2,18 +2,26 @@ FROM node:24.11.0-alpine3.22 AS builder
 
 WORKDIR /app
 
+#gimme pnpm (cached layer)
+RUN npm i -g pnpm@11.21.0
+
+#download dependencies from the lockfile only, so this layer stays cached
+#until dependencies change (source changes no longer trigger a full download)
+COPY ["pnpm-lock.yaml", "pnpm-workspace.yaml", "./"]
+RUN pnpm fetch
+
 #copy
-COPY ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json", "./"]
+COPY ["package.json", "turbo.json", "./"]
 COPY packages packages
 COPY backend backend
 
-#gimme pnpm + build
-RUN npm i -g pnpm@11.21.0 && \
-    pnpm i --frozen-lockfile && \
+#link from the local store + build
+RUN pnpm i --frozen-lockfile --prefer-offline && \
     npm run build
 
 #deploy (install all non-dev dependencies in a single node_module folder)
-RUN pnpm deploy --legacy --filter backend --prod /prod/backend
+#inject copies workspace packages (@monkeytype/*) instead of symlinking them to /app/packages, which is not in the target image
+RUN pnpm deploy --filter backend --prod --prefer-offline --config.inject-workspace-packages=true /prod/backend
 
 #---------------------------------
 
@@ -33,7 +41,7 @@ COPY --from=builder /prod/backend/private /app/backend/private
 ## to build directory
 WORKDIR /app/backend/dist
 
-## logs 
+## logs
 RUN mkdir -p /app/backend/dist/logs
 
 COPY ["docker/backend/entry-point.sh", "./"]

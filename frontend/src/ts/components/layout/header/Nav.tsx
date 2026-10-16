@@ -23,6 +23,7 @@ import {
   setAnimatedLevel,
 } from "../../../states/header";
 import { showModal } from "../../../states/modals";
+import { setRacePanelOpen } from "../../../states/race";
 import { getSnapshot } from "../../../states/snapshot";
 import { getFocus } from "../../../states/test";
 import { cn } from "../../../utils/cn";
@@ -127,6 +128,22 @@ export function Nav(): JSXElement {
         }}
       >
         <Label text="leaderboards" />
+      </Button>
+      <Button
+        variant="text"
+        fa={{
+          icon: "fa-bolt",
+          fixedWidth: true,
+        }}
+        router-link
+        href="/"
+        class={labelClass()}
+        dataset={{
+          "data-nav-item": "race",
+        }}
+        onClick={() => setRacePanelOpen(true)}
+      >
+        <Label text="1v1" />
       </Button>
       <Button
         variant="text"

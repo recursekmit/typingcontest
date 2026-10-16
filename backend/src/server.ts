@@ -15,6 +15,7 @@ import workers from "./workers";
 import Logger from "./utils/logger";
 import * as EmailClient from "./init/email-client";
 import { init as initFirebaseAdmin } from "./init/firebase-admin";
+import { assertSecretConfigured as assertRollAuthSecret } from "./utils/roll-auth";
 import { createIndicies as leaderboardDbSetup } from "./dal/leaderboards";
 import { createIndicies as blocklistDbSetup } from "./dal/blocklist";
 import { createIndicies as connectionsDbSetup } from "./dal/connections";
@@ -30,6 +31,7 @@ async function bootServer(port: number): Promise<Server> {
 
     Logger.info("Initializing Firebase app instance...");
     initFirebaseAdmin();
+    assertRollAuthSecret();
 
     Logger.info("Fetching live configuration...");
     await getLiveConfiguration();

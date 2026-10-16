@@ -280,7 +280,7 @@ export function AboutPage(): JSXElement {
             <Button
               text="email"
               fa={{ icon: "fa-envelope" }}
-              href="mailto:recurse@kmit.in"
+              href="mailto:recursekmit@gmail.com"
               class="w-full p-6"
             />
             <Button

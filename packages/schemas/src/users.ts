@@ -249,6 +249,32 @@ export const UserNameSchema = doesNotContainDisallowedWords(
   UserNameWithoutFilterSchema,
 );
 
+/**
+ * KMIT (JNTUH) roll number, e.g. 23BD1A0501, 24BD5A6612 or 25BD1A055W:
+ * year, college code BD, 1A regular / 5A lateral entry, 2 digit branch code,
+ * 2 character serial (digits and/or letters)
+ */
+export const RollNumberSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{2}BD[15]A\d{2}[0-9A-Z]{2}$/i, "Invalid roll number");
+
+/**
+ * real name entered at roll number login, converted to a username on first login
+ */
+/** password for roll number accounts, kept simple for students */
+export const RollPasswordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(64, "Password must be at most 64 characters");
+
+export const RollLoginNameSchema = z
+  .string()
+  .trim()
+  .min(2, "Name is too short")
+  .max(40, "Name is too long")
+  .regex(/^[a-zA-Z][a-zA-Z .'-]*$/, "Name can only contain letters and spaces");
+
 export const UserSchema = z.object({
   name: UserNameSchema,
   email: UserEmailSchema,
