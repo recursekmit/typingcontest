@@ -1,4 +1,4 @@
-# Recurse Type on Coolify (Docker Compose build pack).
+# Recurse Type on Coolify (Docker Compose build pack, compose location /docker-compose.coolify.yml).
 # MongoDB and Redis are Coolify managed databases (backed up by Coolify),
 # set DB_URI and REDIS_URI to their internal urls in the Coolify environment variables.
 # Domains are set per service in Coolify:
@@ -7,7 +7,7 @@
 services:
   backend:
     build:
-      context: ../..
+      context: .
       dockerfile: docker/backend/Dockerfile
     restart: unless-stopped
     environment:
@@ -26,7 +26,7 @@ services:
 
   frontend:
     build:
-      context: ../..
+      context: .
       dockerfile: docker/frontend/Dockerfile
     restart: unless-stopped
     environment:
