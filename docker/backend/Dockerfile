@@ -46,6 +46,9 @@ RUN mkdir -p /app/backend/dist/logs
 
 COPY ["docker/backend/entry-point.sh", "./"]
 
+# default configuration patch, applied on start (a bind mount over it still works)
+COPY ["docker/backend-configuration.json", "./backend-configuration.json"]
+
 RUN echo "${server_version}" > /app/backend/dist/server.version
 
 #run in prod mode, but don't require anti-cheat, email client or firebase

@@ -1,0 +1,47 @@
+# Recurse Type on Coolify (Docker Compose build pack).
+# MongoDB and Redis are Coolify managed databases (backed up by Coolify),
+# set DB_URI and REDIS_URI to their internal urls in the Coolify environment variables.
+# Domains are set per service in Coolify:
+#   frontend -> https://type.example.com
+#   backend  -> https://type.example.com/api   (strip prefix on)
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_NAME: monkeytype
+      DB_URI: ${DB_URI}
+      REDIS_URI: ${REDIS_URI}
+      FRONTEND_URL: ${FRONTEND_URL}
+      ROLL_AUTH_SECRET: ${ROLL_AUTH_SECRET}
+      RECAPTCHA_SECRET: ${RECAPTCHA_SECRET:-}
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "5005"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: docker/frontend/Dockerfile
+    restart: unless-stopped
+    environment:
+      # relative api url: the site works on every domain it is served on
+      MONKEYTYPE_BACKENDURL: /api
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      FIREBASE_APIKEY: ""
+      FIREBASE_AUTHDOMAIN: ""
+      FIREBASE_PROJECTID: ""
+      FIREBASE_STORAGEBUCKET: ""
+      FIREBASE_MESSAGINGSENDERID: ""
+      FIREBASE_APPID: ""
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "80"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
